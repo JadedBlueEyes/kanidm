@@ -18,6 +18,7 @@ doctest = false
 [features]
 default = []
 dev-oauth2-device-flow = []
+bundled = ["kanidmd_lib/bundled"]
 
 [dependencies]
 askama = { workspace = true, features = ["with-axum"] }

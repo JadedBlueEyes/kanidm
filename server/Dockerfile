@@ -19,7 +19,7 @@ ENV RUSTUP_TOOLCHAIN=${RUST_VERSION}
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
 apt-get update && apt-get install -y \
-    clang-${LLVM_VERSION} lld-${LLVM_VERSION} pkg-config make \
+    clang-${LLVM_VERSION} lld-${LLVM_VERSION} pkg-config make perl \
     curl \
     file
 
@@ -54,8 +54,8 @@ ARG TARGETPLATFORM
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
 xx-apt-get install -y \
-    xx-c-essentials xx-cxx-essentials \
-    libsqlite3-dev libssl-dev
+    xx-c-essentials xx-cxx-essentials 
+    # libsqlite3-dev libssl-dev
 
 
 # Set up Rust toolchain
@@ -103,7 +103,7 @@ RUN <<EOF
   fi
 EOF
 
-ARG KANIDM_FEATURES
+ARG KANIDM_FEATURES="bundled"
 ARG KANIDM_BUILD_PROFILE="container_generic"
 ARG KANIDM_BUILD_OPTIONS=""
 
@@ -154,7 +154,7 @@ COPY --from=base /etc/ssl/certs /etc/ssl/certs
 # Copy our build
 COPY --from=builder --chmod=0755 /out/kanidmd /sbin/kanidmd
 # Web assets
-COPY --from=builder --chmod=0644 /app/server/core/static /hpkg/
+COPY --from=builder /app/server/core/static /hpkg/
 # Copy SBOM
 COPY --from=builder /out/sbom.spdx.json /sbom.spdx.json
 
