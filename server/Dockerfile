@@ -54,8 +54,8 @@ ARG TARGETPLATFORM
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
 xx-apt-get install -y \
-    xx-c-essentials xx-cxx-essentials 
-    # libsqlite3-dev libssl-dev
+    xx-c-essentials xx-cxx-essentials \
+    libsqlite3-dev libssl-dev
 
 
 # Set up Rust toolchain
@@ -103,7 +103,7 @@ RUN <<EOF
   fi
 EOF
 
-ARG KANIDM_FEATURES="bundled"
+ARG KANIDM_FEATURES=""
 ARG KANIDM_BUILD_PROFILE="container_generic"
 ARG KANIDM_BUILD_OPTIONS=""
 
