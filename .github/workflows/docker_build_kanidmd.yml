@@ -41,21 +41,21 @@ jobs:
       - name: Docker metadata
         id: meta
         uses: docker/metadata-action@v5
+      - uses: Swatinem/rust-cache@v2
         with:
-          # list of Docker images to use as base name for tags
-          # images: |
-          #   kanidm/kanidmd
-          #   ghcr.io/username/app
-          # generate Docker tags based on the following events/attributes
-          tags: |
-            type=schedule
-            type=ref,event=branch
-            type=ref,event=pr
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-            type=semver,pattern={{major}}
-            type=sha
-
+          prefix-key: v0-rust-linux/amd64-base
+        id: rust-cache
+      - name: Inject cache into Docker
+        uses: reproducible-containers/buildkit-cache-dance@v3.1.2
+        with:
+          cache-map: |
+            {
+              "/home/runner/.cargo/registry": "/usr/local/cargo/registry",
+              "/home/runner/.cargo/git/db": "/usr/local/cargo/git/db",
+              "./target": "/app/target"
+            }
+      - name: Get Git commit timestamps
+        run: echo "TIMESTAMP=$(git log -1 --pretty=%ct)" >> $GITHUB_ENV
       - name: Build kanidmd
         uses: docker/build-push-action@v6
         with:
@@ -64,8 +64,15 @@ jobs:
           # build-args: |
           #  "KANIDM_BUILD_OPTIONS=-j1"
           file: server/Dockerfile
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          sbom: true
           # Must use OCI exporter for multi-arch: https://github.com/docker/buildx/pull/1813
           outputs: type=oci,dest=/tmp/kanidmd-docker.tar
+        env:
+          SOURCE_DATE_EPOCH: ${{ env.TIMESTAMP }}
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
