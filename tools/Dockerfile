@@ -144,7 +144,24 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 EOF
 
 # Generate Software Bill of Materials (SBOM)
-RUN cargo sbom > /out/sbom.spdx.json
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git/db \
+    bash <<EOF
+    mkdir /out/sbom
+    typeset -A PACKAGES
+    for BINARY in /out/sbin/*; do
+        BINARY_BASE=\$(basename \${BINARY})
+        package=\$(cargo metadata --no-deps --format-version 1 | jq -r ".packages[] | select(.targets[] | select( .kind | map(. == \"bin\") | any ) | .name == \"\$BINARY_BASE\") | .name")
+        if [ -z "\$package" ]; then
+            continue
+        fi
+        PACKAGES[\$package]=1
+    done
+    for PACKAGE in \$(echo \${!PACKAGES[@]}); do
+        echo \$PACKAGE
+        cargo sbom --cargo-package \$PACKAGE > /out/sbom/\$PACKAGE.spdx.json
+    done
+EOF
 
 # Extract dynamically linked dependencies
 RUN <<EOF
@@ -190,8 +207,26 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     done
 EOF
 
-# Generate Software Bill of Materials (SBOM)
-RUN cargo sbom --cargo-package fido-mds-tool > /out/fido.spdx.json
+# Generate Software Bill of Materials (SBOM)# Generate Software Bill of Materials (SBOM)
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git/db \
+    bash <<EOF
+    mkdir /out/sbom
+    typeset -A PACKAGES
+    for BINARY in /out/sbin/*; do
+        BINARY_BASE=\$(basename \${BINARY})
+        package=\$(cargo metadata --no-deps --format-version 1 | jq -r ".packages[] | select(.targets[] | select( .kind | map(. == \"bin\") | any ) | .name == \"\$BINARY_BASE\") | .name")
+        echo \$BINARY \$package
+        if [ -z "\$package" ]; then
+            continue
+        fi
+        PACKAGES[\$package]=1
+    done
+    for PACKAGE in \$(echo \${!PACKAGES[@]}); do
+        echo \$PACKAGE
+        cargo sbom --cargo-package \$PACKAGE > /out/sbom/\$PACKAGE.spdx.json
+    done
+EOF
 
 # Extract dynamically linked dependencies
 RUN <<EOF
@@ -216,8 +251,8 @@ COPY --from=builder --chmod=0755 /out/sbin/ /sbin/
 COPY --from=fido-builder --chmod=0755 /out/sbin/ /sbin/
 
 # Copy SBOM
-COPY --from=builder /out/sbom.spdx.json /sbom.spdx.json
-COPY --from=fido-builder /out/fido.spdx.json /fido.spdx.json
+COPY --from=builder /out/sbom/ /sbom/
+COPY --from=fido-builder /out/sbom/ /sbom/
 
 
 # Copy dynamic libraries to root

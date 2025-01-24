@@ -142,7 +142,24 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
 EOF
 
 # Generate Software Bill of Materials (SBOM)
-RUN cargo sbom > /out/sbom.spdx.json
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git/db \
+    bash <<EOF
+    mkdir /out/sbom
+    typeset -A PACKAGES
+    for BINARY in /out/sbin/*; do
+        BINARY_BASE=\$(basename \${BINARY})
+        package=\$(cargo metadata --no-deps --format-version 1 | jq -r ".packages[] | select(.targets[] | select( .kind | map(. == \"bin\") | any ) | .name == \"\$BINARY_BASE\") | .name")
+        if [ -z "\$package" ]; then
+            continue
+        fi
+        PACKAGES[\$package]=1
+    done
+    for PACKAGE in \$(echo \${!PACKAGES[@]}); do
+        echo \$PACKAGE
+        cargo sbom --cargo-package \$PACKAGE > /out/sbom/\$PACKAGE.spdx.json
+    done
+EOF
 
 # Extract dynamically linked dependencies
 RUN <<EOF
@@ -167,7 +184,7 @@ COPY --from=builder --chmod=0755 /out/sbin/ /sbin/
 # Web assets
 COPY --from=builder /app/server/core/static /hpkg/
 # Copy SBOM
-COPY --from=builder /out/sbom.spdx.json /sbom.spdx.json
+COPY --from=builder /out/sbom/ /sbom/
 
 # Copy dynamic libraries to root
 COPY --from=builder /out/libs-root/ /
