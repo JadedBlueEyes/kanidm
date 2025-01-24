@@ -20,7 +20,7 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
 apt-get update && apt-get install -y \
     clang-${LLVM_VERSION} lld-${LLVM_VERSION} pkg-config make perl jq \
-    curl \
+    curl git \
     file
 
 # Create symlinks for LLVM tools
@@ -159,6 +159,49 @@ EOF
 RUN mkdir /etc/kanidm && \
     touch /etc/kanidm/config
 
+FROM toolchain as fido-builder
+
+# Get source
+RUN git init && \
+    git remote add origin https://github.com/kanidm/webauthn-rs.git && \
+    git fetch origin 66a3d9903b31fa5a67fc00dd65ba8f55695df183 && \
+    git reset --hard FETCH_HEAD
+
+# Build the binary
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git/db \
+    --mount=type=cache,target=/app/target \
+    bash <<EOF
+    set -o allexport
+    . /etc/environment
+    TARGET_DIR=(\$(cargo metadata --no-deps --format-version 1 | \
+            jq -r ".target_directory"))
+    mkdir /out/sbin
+    PACKAGE=fido-mds-tool
+    # The lock file in this repo is not complete
+    xx-cargo build --release \
+        -p \$PACKAGE;
+    BINARIES=(\$(cargo metadata --no-deps --format-version 1 | \
+        jq -r ".packages[] | select(.name == \"\$PACKAGE\") | .targets[] | select( .kind | map(. == \"bin\") | any ) | .name"))
+    for BINARY in "\${BINARIES[@]}"; do
+        echo \$BINARY
+        xx-verify \$TARGET_DIR/$(xx-cargo   --print-target-triple)/release/\$BINARY
+        cp \$TARGET_DIR/$(xx-cargo --print-target-triple)/release/\$BINARY /out/sbin/\$BINARY
+    done
+EOF
+
+# Generate Software Bill of Materials (SBOM)
+RUN cargo sbom --cargo-package fido-mds-tool > /out/fido.spdx.json
+
+# Extract dynamically linked dependencies
+RUN <<EOF
+    mkdir /out/libs
+    mkdir /out/libs-root
+    for BINARY in /out/sbin/*; do
+        lddtree "$BINARY" | awk '{print $(NF-0) " " $1}' | sort -u -k 1,1 | awk '{print "install", "-D", $1, (($2 ~ /^\//) ? "/out/libs-root" $2 : "/out/libs/" $2)}' | xargs -I {} sh -c {}
+    done
+EOF
+
 FROM scratch
 
 WORKDIR /
@@ -170,12 +213,18 @@ COPY --from=base /etc/ssl/certs /etc/ssl/certs
 
 # Copy our build
 COPY --from=builder --chmod=0755 /out/sbin/ /sbin/
+COPY --from=fido-builder --chmod=0755 /out/sbin/ /sbin/
+
 # Copy SBOM
 COPY --from=builder /out/sbom.spdx.json /sbom.spdx.json
+COPY --from=fido-builder /out/fido.spdx.json /fido.spdx.json
+
 
 # Copy dynamic libraries to root
 COPY --from=builder /out/libs-root/ /
 COPY --from=builder /out/libs/ /usr/lib/
+
+COPY --from=fido-builder /out/libs/ /usr/lib/
 
 # Inform linker where to find libraries
 ENV LD_LIBRARY_PATH=/usr/lib
