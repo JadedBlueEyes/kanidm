@@ -187,7 +187,7 @@ RUN git init && \
 # Build the binary
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git/db \
-    --mount=type=cache,target=/app/target \
+    --mount=type=cache,target=/app/target,id=/fido/target \
     bash <<EOF
     set -o allexport
     . /etc/environment
