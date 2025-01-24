@@ -2,7 +2,7 @@ ARG RUST_VERSION=1.84
 
 FROM --platform=$BUILDPLATFORM docker.io/tonistiigi/xx AS xx
 FROM --platform=$BUILDPLATFORM rust:${RUST_VERSION}-slim-bookworm AS base
-FROM --platform=$BUILDPLATFORM rust:${RUST_VERSION}-slim-bookworm AS builder
+FROM --platform=$BUILDPLATFORM rust:${RUST_VERSION}-slim-bookworm AS toolchain
 
 # Prevent deletion of apt cache
 RUN rm -f /etc/apt/apt.conf.d/docker-clean
@@ -64,9 +64,6 @@ COPY ./rust-toolchain.toml .
 RUN rustc --version \
     && rustup target add $(xx-cargo --print-target-triple)
 
-# Get source
-COPY . .
-
 # Build binary
 # We disable incremental compilation to save disk space, as it only produces a minimal speedup for this case.
 ENV CARGO_INCREMENTAL=0
@@ -116,6 +113,11 @@ RUN cat /etc/environment
 # Prepare output directories
 RUN mkdir /out
 
+FROM toolchain AS builder
+
+# Get source
+COPY . .
+
 # Build the binary
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git/db \
@@ -124,6 +126,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     set -o allexport
     . /etc/environment
     PACKAGES_LIST=("kanidm_tools" "kanidm-ipa-sync" "kanidm-ldap-sync")
+    TARGET_DIR=(\$(cargo metadata --no-deps --format-version 1 | \
+            jq -r ".target_directory"))
     mkdir /out/sbin
     for PACKAGE in "\${PACKAGES_LIST[@]}"; do
         xx-cargo build --locked --release \
@@ -133,8 +137,8 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
             jq -r ".packages[] | select(.name == \"\$PACKAGE\") | .targets[] | select( .kind | map(. == \"bin\") | any ) | .name"))
         for BINARY in "\${BINARIES[@]}"; do
             echo \$BINARY
-            xx-verify ./target/$(xx-cargo   --print-target-triple)/release/\$BINARY
-            cp ./target/$(xx-cargo --print-target-triple)/release/\$BINARY /out/sbin/\$BINARY
+            xx-verify \$TARGET_DIR/$(xx-cargo   --print-target-triple)/release/\$BINARY
+            cp \$TARGET_DIR/$(xx-cargo --print-target-triple)/release/\$BINARY /out/sbin/\$BINARY
         done
     done
 EOF
@@ -166,8 +170,6 @@ COPY --from=base /etc/ssl/certs /etc/ssl/certs
 
 # Copy our build
 COPY --from=builder --chmod=0755 /out/sbin/ /sbin/
-# Web assets
-COPY --from=builder --chmod=0644 /app/server/core/static /hpkg/
 # Copy SBOM
 COPY --from=builder /out/sbom.spdx.json /sbom.spdx.json
 

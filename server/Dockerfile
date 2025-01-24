@@ -2,7 +2,7 @@ ARG RUST_VERSION=1.84
 
 FROM --platform=$BUILDPLATFORM docker.io/tonistiigi/xx AS xx
 FROM --platform=$BUILDPLATFORM rust:${RUST_VERSION}-slim-bookworm AS base
-FROM --platform=$BUILDPLATFORM rust:${RUST_VERSION}-slim-bookworm AS builder
+FROM --platform=$BUILDPLATFORM rust:${RUST_VERSION}-slim-bookworm AS toolchain
 
 # Prevent deletion of apt cache
 RUN rm -f /etc/apt/apt.conf.d/docker-clean
@@ -19,7 +19,7 @@ ENV RUSTUP_TOOLCHAIN=${RUST_VERSION}
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
 apt-get update && apt-get install -y \
-    clang-${LLVM_VERSION} lld-${LLVM_VERSION} pkg-config make perl \
+    clang-${LLVM_VERSION} lld-${LLVM_VERSION} pkg-config make perl jq \
     curl \
     file
 
@@ -63,9 +63,6 @@ WORKDIR /app
 COPY ./rust-toolchain.toml .
 RUN rustc --version \
     && rustup target add $(xx-cargo --print-target-triple)
-
-# Get source
-COPY . .
 
 # Build binary
 # We disable incremental compilation to save disk space, as it only produces a minimal speedup for this case.
@@ -116,30 +113,44 @@ RUN cat /etc/environment
 # Prepare output directories
 RUN mkdir /out
 
+FROM toolchain AS builder
+
+# Get source
+COPY . .
+
 # Build the binary
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git/db \
     --mount=type=cache,target=/app/target \
     bash <<EOF
-  set -o allexport
-  . /etc/environment
-  xx-cargo build --locked --release \
-    -p daemon ${KANIDM_BUILD_OPTIONS} \
-    --features="${KANIDM_FEATURES}";
-  xx-verify ./target/$(xx-cargo --print-target-triple)/release/kanidmd
-  cp ./target/$(xx-cargo --print-target-triple)/release/kanidmd /out/kanidmd
+    set -o allexport
+    . /etc/environment
+    TARGET_DIR=(\$(cargo metadata --no-deps --format-version 1 | \
+            jq -r ".target_directory"))
+    mkdir /out/sbin
+    PACKAGE=daemon
+    xx-cargo build --locked --release \
+        -p \$PACKAGE ${KANIDM_BUILD_OPTIONS} \
+        --features="${KANIDM_FEATURES}";
+    BINARIES=(\$(cargo metadata --no-deps --format-version 1 | \
+        jq -r ".packages[] | select(.name == \"\$PACKAGE\") | .targets[] | select( .kind | map(. == \"bin\") | any ) | .name"))
+    for BINARY in "\${BINARIES[@]}"; do
+        echo \$BINARY
+        xx-verify \$TARGET_DIR/$(xx-cargo   --print-target-triple)/release/\$BINARY
+        cp \$TARGET_DIR/$(xx-cargo --print-target-triple)/release/\$BINARY /out/sbin/\$BINARY
+    done
 EOF
 
 # Generate Software Bill of Materials (SBOM)
 RUN cargo sbom > /out/sbom.spdx.json
 
 # Extract dynamically linked dependencies
-# RUN lddtree /out/app
-RUN lddtree /out/kanidmd | awk '{print $(NF-0) " " $1}' | sort -u -k 1,1 | awk '{print "install", "-D", $1, (($2 ~ /^\//) ? "/out/libs-root" $2 : "/out/libs/" $2)}'
 RUN <<EOF
     mkdir /out/libs
     mkdir /out/libs-root
-    lddtree /out/kanidmd | awk '{print $(NF-0) " " $1}' | sort -u -k 1,1 | awk '{print "install", "-D", $1, (($2 ~ /^\//) ? "/out/libs-root" $2 : "/out/libs/" $2)}' | xargs -I {} sh -c {}
+    for BINARY in /out/sbin/*; do
+        lddtree "$BINARY" | awk '{print $(NF-0) " " $1}' | sort -u -k 1,1 | awk '{print "install", "-D", $1, (($2 ~ /^\//) ? "/out/libs-root" $2 : "/out/libs/" $2)}' | xargs -I {} sh -c {}
+    done
 EOF
 
 FROM scratch
@@ -152,7 +163,7 @@ WORKDIR /
 COPY --from=base /etc/ssl/certs /etc/ssl/certs
 
 # Copy our build
-COPY --from=builder --chmod=0755 /out/kanidmd /sbin/kanidmd
+COPY --from=builder --chmod=0755 /out/sbin/ /sbin/
 # Web assets
 COPY --from=builder /app/server/core/static /hpkg/
 # Copy SBOM
