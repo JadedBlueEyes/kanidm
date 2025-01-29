@@ -66,7 +66,7 @@ RUN rustc --version \
 
 # Build binary
 # We disable incremental compilation to save disk space, as it only produces a minimal speedup for this case.
-ENV CARGO_INCREMENTAL=0
+RUN echo "CARGO_INCREMENTAL=0" >> /etc/environment
 
 # Configure pkg-config
 RUN <<EOF
@@ -100,17 +100,19 @@ RUN <<EOF
   fi
 EOF
 
+# Prepare output directories
+RUN mkdir /out
+
+FROM toolchain AS builder
+
+ARG TARGETPLATFORM
+
 ARG KANIDM_FEATURES=""
 ARG KANIDM_BUILD_PROFILE=""
 ARG KANIDM_BUILD_OPTIONS=""
 
 # Set the build profile
 ENV KANIDM_BUILD_PROFILE=${KANIDM_BUILD_PROFILE:-container_generic}
-
-# Prepare output directories
-RUN mkdir /out
-
-FROM toolchain AS builder
 
 # Verify environment configuration
 RUN cat /etc/environment

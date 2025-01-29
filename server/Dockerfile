@@ -66,7 +66,7 @@ RUN rustc --version \
 
 # Build binary
 # We disable incremental compilation to save disk space, as it only produces a minimal speedup for this case.
-ENV CARGO_INCREMENTAL=0
+RUN echo "CARGO_INCREMENTAL=0" >> /etc/environment
 
 # Configure pkg-config
 RUN <<EOF
