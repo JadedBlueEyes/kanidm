@@ -54,7 +54,7 @@ ARG TARGETPLATFORM
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt,sharing=locked \
 xx-apt-get install -y \
-    xx-c-essentials xx-cxx-essentials \
+    xx-c-essentials xx-cxx-essentials pkg-config \
     libsqlite3-dev libssl-dev libudev-dev
 
 
@@ -71,7 +71,7 @@ ENV CARGO_INCREMENTAL=0
 # Configure pkg-config
 RUN <<EOF
     echo "PKG_CONFIG_LIBDIR=/usr/lib/$(xx-info)/pkgconfig" >> /etc/environment
-    echo "PKG_CONFIG=/usr/bin/$(xx-info)-pkg-config"
+    echo "PKG_CONFIG=/usr/bin/$(xx-info)-pkg-config" >> /etc/environment
     echo "PKG_CONFIG_ALLOW_CROSS=true" >> /etc/environment
 EOF
 
@@ -107,13 +107,14 @@ ARG KANIDM_BUILD_OPTIONS=""
 # Set the build profile
 ENV KANIDM_BUILD_PROFILE=${KANIDM_BUILD_PROFILE:-container_generic}
 
-# Verify environment configuration
-RUN cat /etc/environment
-
 # Prepare output directories
 RUN mkdir /out
 
 FROM toolchain AS builder
+
+# Verify environment configuration
+RUN cat /etc/environment
+RUN xx-cargo --print-target-triple
 
 # Get source
 COPY . .
@@ -177,6 +178,19 @@ RUN mkdir /etc/kanidm && \
     touch /etc/kanidm/config
 
 FROM toolchain as fido-builder
+
+ARG TARGETPLATFORM
+
+ARG KANIDM_FEATURES=""
+ARG KANIDM_BUILD_PROFILE=""
+ARG KANIDM_BUILD_OPTIONS=""
+
+# Set the build profile
+ENV KANIDM_BUILD_PROFILE=${KANIDM_BUILD_PROFILE:-container_generic}
+
+# Verify environment configuration
+RUN cat /etc/environment
+RUN xx-cargo --print-target-triple
 
 # Get source
 RUN git init && \
