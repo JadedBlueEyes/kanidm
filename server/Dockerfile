@@ -21,7 +21,8 @@ RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
 apt-get update && apt-get install -y \
     clang-${LLVM_VERSION} lld-${LLVM_VERSION} pkg-config make perl jq \
     curl \
-    file
+    file \
+    libssl-dev
 
 # Create symlinks for LLVM tools
 RUN <<EOF
