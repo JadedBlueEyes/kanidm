@@ -25,9 +25,15 @@ apt-get update && apt-get install -y \
 
 # Create symlinks for LLVM tools
 RUN <<EOF
+    # clang
     ln -s /usr/bin/clang-${LLVM_VERSION} /usr/bin/clang
-    ln -s "/usr/bin/clang-${LLVM_VERSION}++" "/usr/bin/clang++"
+    ln -s "/usr/bin/clang++-${LLVM_VERSION}" "/usr/bin/clang++"
+    # lld
+    ln -s /usr/bin/ld64.lld-${LLVM_VERSION} /usr/bin/ld64.lld
+    ln -s /usr/bin/ld.lld-${LLVM_VERSION} /usr/bin/ld.lld
     ln -s /usr/bin/lld-${LLVM_VERSION} /usr/bin/lld
+    ln -s /usr/bin/lld-link-${LLVM_VERSION} /usr/bin/lld-link
+    ln -s /usr/bin/wasm-ld-${LLVM_VERSION} /usr/bin/wasm-ld
 EOF
 
 # Developer tool versions
@@ -78,14 +84,15 @@ EOF
 # Configure cc to use clang version
 RUN <<EOF
     echo "CC=clang" >> /etc/environment
-    echo "CXX=clang++" >> /etc/environment    
+    echo "CXX=clang++" >> /etc/environment
 EOF
 
 # Cross-language LTO
 RUN <<EOF
     echo "CFLAGS=-flto" >> /etc/environment
     echo "CXXFLAGS=-flto" >> /etc/environment
-    echo "RUSTFLAGS='-Clinker-plugin-lto -Clinker=clang -Clink-arg=-fuse-ld=lld'" >> /etc/environment
+    # Linker is set to target-compatible clang by xx
+    echo "RUSTFLAGS='-Clinker-plugin-lto -Clink-arg=-fuse-ld=lld'" >> /etc/environment
 EOF
 
 # Apply CPU-specific optimizations if TARGET_CPU is provided
