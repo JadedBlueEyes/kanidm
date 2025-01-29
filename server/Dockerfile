@@ -108,17 +108,19 @@ RUN <<EOF
   fi
 EOF
 
-ARG KANIDM_FEATURES=""
-ARG KANIDM_BUILD_PROFILE="container_generic"
-ARG KANIDM_BUILD_OPTIONS=""
-
-# Set the build profile
-ENV KANIDM_BUILD_PROFILE=${KANIDM_BUILD_PROFILE:-container_generic}
-
 # Prepare output directories
 RUN mkdir /out
 
 FROM toolchain AS builder
+
+ARG TARGETPLATFORM
+
+ARG KANIDM_FEATURES=""
+ARG KANIDM_BUILD_PROFILE=""
+ARG KANIDM_BUILD_OPTIONS=""
+
+# Set the build profile
+ENV KANIDM_BUILD_PROFILE=${KANIDM_BUILD_PROFILE:-container_generic}
 
 # Verify environment configuration
 RUN cat /etc/environment
